@@ -1,143 +1,221 @@
 import tkinter as tk
 from tkinter import Toplevel, filedialog
 import numpy as np
-from PIL import ImageOps
-import pandas as pd
-from scipy.interpolate import interp1d
+from PIL import Image
+import cv2
+
+CHANNELS = {"R": 0, "G": 1, "B": 2}
 
 class TonecurveWindow:
-    def __init__(self, image, main_app):
+    def __init__(self, image, root):
+        self.root = root
         self.window = Toplevel()
         self.window.title("Tone Curve Adjustment")
-        self.image = image
-        self.main_app = main_app
 
-        self.canvas = tk.Canvas(self.window, width=500, height=500, bg='#2e2e2e')
-        self.canvas.pack()
+        self.luts = [[] for _ in range(3)]
+        self.original_image = np.array(image, dtype=np.uint8)
 
-        self.points = []
-        self.vertical_lines = []
-        self.regions = []
+        self.image_on_canvas = None
+
+        self.hist_canvas = tk.Canvas(self.window, width=768, height=150, bg="black")
+        self.hist_canvas.pack(side=tk.TOP)
+
+        self.r_canvas = tk.Canvas(self.window, width=256, height=256, bg="white",
+                                  #takefocus = True,
+                                  )
+        self.g_canvas = tk.Canvas(self.window, width=256, height=256, bg="white",
+                                  #takefocus = True,
+                                  )
+        self.b_canvas = tk.Canvas(self.window, width=256, height=256, bg="white",
+                                  #takefocus = True,
+                                  )
+
+        self.r_canvas.pack(side=tk.LEFT)
+        self.g_canvas.pack(side=tk.LEFT)
+        self.b_canvas.pack(side=tk.LEFT)
+
+        self.tone_curve_adjusters = {
+            "R": ToneCurveAdjuster(self, self.r_canvas, "R", "red"),
+            "G": ToneCurveAdjuster(self, self.g_canvas, "G", "green"),
+            "B": ToneCurveAdjuster(self, self.b_canvas, "B", "blue"),
+        }
+        for channel_name in self.tone_curve_adjusters:
+            self.luts[CHANNELS[channel_name]] = self.tone_curve_adjusters[channel_name].lut.copy()
+
+        self.reset_button = tk.Button(self.window, text="Reset", command=self.reset_curves)
+        self.reset_button.pack(side=tk.TOP)
+
+    def load_image(self):
+        file_path = filedialog.askopenfilename()
+        if file_path:
+            self.original_image = cv2.imread(file_path)
+            self.display_image(self.original_image)
+            self.draw_histogram()
+
+    def display_image(self, image):
+        self.image_on_canvas = Image.fromarray(image)
+        self.root.update_image(self.image_on_canvas)
+
+    def update_lut(self, lut, channel_idx):
+        self.luts[channel_idx] = lut
+
+    def apply_tone_curve(self, lut, channel_name):
+        if self.original_image is not None:
+            channels = list(cv2.split(self.original_image))
+            channel_idx = CHANNELS[channel_name]
+            self.update_lut(lut, channel_idx)
+            for idx in CHANNELS.values():
+                channels[idx] = cv2.LUT(channels[idx], self.luts[idx])
+            adjusted_image = cv2.merge(channels)
+            self.display_image(adjusted_image)
+            self.draw_histogram(adjusted_image)
+
+    def reset_curves(self):
+        for adjuster in self.tone_curve_adjusters.values():
+            adjuster.reset_curve()
+        if self.original_image is not None:
+            self.display_image(self.original_image)
+            self.draw_histogram()
+
+    def draw_histogram(self, image=None):
+        self.hist_canvas.delete("histogram")
+        if image is None:
+            image = self.original_image
+
+        # ヒストグラムを計算
+        hist_r = cv2.calcHist([image], [2], None, [256], [0, 256])
+        hist_g = cv2.calcHist([image], [1], None, [256], [0, 256])
+        hist_b = cv2.calcHist([image], [0], None, [256], [0, 256])
+
+        max_value = max(hist_r.max(), hist_g.max(), hist_b.max())
+        for i in range(256):
+            r_value = int(hist_r[i][0] * 150 / max_value)
+            g_value = int(hist_g[i][0] * 150 / max_value)
+            b_value = int(hist_b[i][0] * 150 / max_value)
+
+            self.hist_canvas.create_line(i*3, 150, i*3, 150-r_value, fill="red", tags="histogram")
+            self.hist_canvas.create_line(i*3+1, 150, i*3+1, 150-g_value, fill="green", tags="histogram")
+            self.hist_canvas.create_line(i*3+2, 150, i*3+2, 150-b_value, fill="blue", tags="histogram")
+
+class ToneCurveAdjuster:
+    def __init__(self, parent, canvas, channel_name, color):
+        self.parent = parent
+        self.canvas = canvas
+        self.channel_name = channel_name
+        self.color = color
+        self.curve_points = [(0, 255), (255, 0)]
         self.selected_point = None
 
-        # Create points along the diagonal for a one-to-one mapping
-        for i in range(256):
-            x = 2 * i
-            y = 500 - 2 * i
-            point = self.canvas.create_oval(x - 5, y - 5, x + 5, y + 5, fill="white", tags=f"point{i}")
-            self.points.append(point)
-            v_line = self.canvas.create_line(x, 0, x, 500, fill="#696969")
-            self.vertical_lines.append(v_line)
-            if i > 0:
-                self.regions.append(self.canvas.create_rectangle((x-2, 0, x, 500), outline="", tags=f"region{i-1}"))
+        self.canvas.bind("<Button-3>", self.add_point)
+        self.canvas.bind("<B3-Motion>", self.move_new_point)
+        self.canvas.bind("<B1-Motion>", self.move_existing_point)
+        self.canvas.bind("<ButtonRelease-3>", self.update_image)
+        self.canvas.bind("<ButtonRelease-1>", self.update_image)
+        self.canvas.bind("<Button-2>", self.delete_selected_point)
+        self.draw_curve()
+        self.lut = self.generate_lut()
 
-        self.lines = []
-        self.update_lines()
-
-        for point in self.points:
-            self.canvas.tag_bind(point, "<ButtonPress-1>", self.on_button_press)
-            self.canvas.tag_bind(point, "<B1-Motion>", self.on_motion)
-
-        for region in self.regions:
-            self.canvas.tag_bind(region, "<ButtonPress-1>", self.on_region_press)
-            self.canvas.tag_bind(region, "<B1-Motion>", self.on_region_motion)
-
-        self.min_range = 0
-        self.max_range = 500
-
+    def draw_curve(self):
+        self.canvas.delete("curve")
         self.draw_grid()
-
-        self.save_button = tk.Button(self.window, text="Save", command=self.save_points)
-        self.save_button.pack(side=tk.LEFT)
-
-        self.load_button = tk.Button(self.window, text="Load", command=self.load_points)
-        self.load_button.pack(side=tk.LEFT)
-
-    def on_button_press(self, event):
-        self.selected_point = event.widget.find_withtag("current")[0]
-
-    def on_motion(self, event):
-        if self.selected_point is not None:
-            index = int(self.canvas.gettags(self.selected_point)[0][5:])
-            x = 2 * index
-            y = max(self.min_range, min(event.y, self.max_range))
-            self.canvas.coords(self.selected_point, x-5, y-5, x+5, y+5)
-            self.update_lines()
-            self.apply_tone_curve()
-
-    def on_region_press(self, event):
-        region_index = int(self.canvas.gettags("current")[0][6:])
-        self.selected_point = self.points[region_index]
-
-    def on_region_motion(self, event):
-        self.on_motion(event)
-
-    def update_lines(self):
-        for line in self.lines:
-            self.canvas.delete(line)
-        self.lines = []
-
-        # Get all points coordinates
-        points_coords = [(self.canvas.coords(point)[0]+2, self.canvas.coords(point)[1]+2) for point in self.points]
-        
-        # Separate into x and y components
-        x_coords, y_coords = zip(*points_coords)
-
-        # Use spline interpolation for smoother curves
-        spline = interp1d(x_coords, y_coords, kind='cubic', bounds_error=False, fill_value="extrapolate")
-
-        # Generate more points for a smooth curve
-        x_new = np.linspace(0, 510, num=500, endpoint=True)
-        y_new = spline(x_new)
-
-        # Draw smooth curve
-        for i in range(len(x_new) - 1):
-            line = self.canvas.create_line(x_new[i], y_new[i], x_new[i+1], y_new[i+1], fill="white")
-            self.lines.append(line)
+        for i, point in enumerate(self.curve_points):
+            x, y = point
+            if i == self.selected_point:
+                self.canvas.create_oval(x-4, y-4, x+4, y+4, outline=self.color, fill="white", width=2, tags="curve")
+            else:
+                self.canvas.create_oval(x-3, y-3, x+3, y+3, fill=self.color, tags="curve")
+        for i in range(len(self.curve_points) - 1):
+            x1, y1 = self.curve_points[i]
+            x2, y2 = self.curve_points[i + 1]
+            self.canvas.create_line(x1, y1, x2, y2, fill=self.color, tags="curve")
 
     def draw_grid(self):
-        for i in range(0, 501, 20):
-            self.canvas.create_line(i, 0, i, 500, fill="#696969")
-            self.canvas.create_line(0, i, 500, i, fill="#696969")
+        self.canvas.create_rectangle(0, 0, 256, 256, fill="darkgray", tags="curve")
+        for i in range(0, 256, 10):
+            color = "white" if i % 50 == 0 else "lightgray"
+            self.canvas.create_line(i, 0, i, 256, fill=color, tags="curve")
+            self.canvas.create_line(0, i, 256, i, fill=color, tags="curve")
+        for i in range(0, 256, 50):
+            self.canvas.create_text(i, 245, text=str(i), fill="white", tags="curve")
+            self.canvas.create_text(15, 255-i, text=str(i), fill="white", tags="curve")
 
-        for i in range(0, 501, 20):
-            self.canvas.create_text(i, 490, text=str(i//2), fill="white")
-            self.canvas.create_text(10, 500-i, text=str(i//2), fill="white")
+    def add_point(self, event):
+        x = max(0, min(255, event.x))
+        y = self.calculate_lut_value(x)
+        self.curve_points.append((x, y))
+        self.curve_points.sort()
+        self.selected_point = self.curve_points.index((x, y))
+        self.draw_curve()
 
-    def apply_tone_curve(self):
-        curve = np.zeros(256)
-        for i in range(len(self.points)):
-            x, y, _, _ = self.canvas.coords(self.points[i])
-            curve[int(x / 2)] = 255 * (1 - y / 500)
-        curve = np.interp(np.arange(256), np.where(curve != 0)[0], curve[curve != 0])
+    def move_new_point(self, event):
+        if self.selected_point is not None and self.selected_point not in [0, len(self.curve_points) - 1]:
+            min_x = self.curve_points[self.selected_point - 1][0]
+            max_x = self.curve_points[self.selected_point + 1][0]
+            x = max(min_x, min(max_x, event.x))
+            if event.state & 0x4: # Ctrlで分岐
+                y = 255 - self.lut[x]
+            else:
+                y = max(0, min(255, event.y))
+            self.curve_points[self.selected_point] = (x, y)
+            self.draw_curve()
 
-        lut = np.array([curve[int(i)] for i in range(256)]).astype("uint8")
-        updated_image = ImageOps.autocontrast(self.image.point(lut))
-        self.main_app.update_image(updated_image)
+    def move_existing_point(self, event):
+        if len(self.curve_points) > 2:
+            self.selected_point = self.get_nearest_point(event.x, event.y)
 
-    def save_points(self):
-        points_data = {}
-        for i, point in enumerate(self.points):
-            _, y1, _, y2 = self.canvas.coords(point)
-            points_data[f"point{i}"] = {"x": 2 * i, "y": (y1 + y2) / 2}
+            min_x = self.curve_points[self.selected_point - 1][0]
+            max_x = self.curve_points[self.selected_point + 1][0]
+            x = max(min_x, min(max_x, event.x))
 
-        df = pd.DataFrame(points_data).T
-        save_path = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel files", "*.xlsx")])
-        if save_path:
-            df.to_excel(save_path, index=False)
+            y = max(0, min(255, event.y))
+            self.curve_points[self.selected_point] = (x, y)
+            self.draw_curve()
 
-    def load_points(self):
-        load_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx")])
-        if load_path:
-            df = pd.read_excel(load_path)
-            for i, point in df.iterrows():
-                x = point["x"]
-                y = point["y"]
-                self.canvas.coords(self.points[i], x-5, y-5, x+5, y+5)
-            self.update_lines()
-            self.apply_tone_curve()
+    def get_nearest_point(self, x, y):
+        min_dist = float('inf')
+        nearest_point = None
+        curve_points_without_edge = self.curve_points[1:-1]
+        for i, (px, py) in enumerate(curve_points_without_edge):
+            dist = (px - x) ** 2 + (py - y) ** 2
+            if dist < min_dist:
+                min_dist = dist
+                nearest_point = i + 1 # (0, 0)を除くため
+        return nearest_point
 
-# Main application
-root = tk.Tk()
-app = TonecurveWindow(None, root)  # Test without an image.
-root.mainloop()
+    def update_image(self, event=None):
+        self.lut = self.generate_lut()
+        self.parent.apply_tone_curve(self.lut, self.channel_name)
+
+    def generate_lut(self):
+        lut = np.zeros(256, dtype=np.uint8)
+        for i in range(256):
+            lut[i] = self.calculate_lut_value(i)
+        return lut
+
+    def calculate_lut_value(self, x):
+        for i in range(len(self.curve_points) - 1):
+            x1, y1 = self.curve_points[i]
+            x2, y2 = self.curve_points[i + 1]
+            y1, y2 = 255 - y1, 255 - y2 # x=yに対して対称
+            if x1 <= x <= x2:
+                t = (x - x1) / (x2 - x1)
+                return int(y1 * (1 - t) + y2 * t)
+        return 0
+
+    def reset_curve(self):
+        self.curve_points = [(0, 255), (255, 0)]
+        self.draw_curve()
+        self.update_image()
+
+    def delete_selected_point(self, event):
+        if self.selected_point is not None:
+            self.curve_points.pop(self.selected_point)
+            self.draw_curve()
+            self.update_image()
+            self.selected_point = None
+
+if __name__ == "__main__":
+    # Main application
+    root = tk.Tk()
+    app = TonecurveWindow(None, root)  # Test without an image.
+    root.mainloop()
