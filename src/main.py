@@ -6,8 +6,11 @@ import cv2
 import os
 import time
 import numpy as np
+from moviepy.editor import VideoFileClip
+from moviepy.video.io.VideoFileClip import VideoFileClip
+from moviepy.video.io.ffmpeg_tools import ffmpeg_merge_video_audio
 
-ROOT = os.path.abspath(os.path.dirname(__file__))
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 IMAGE_DIR = os.path.join(ROOT, "images")
 
 class ImageProcessingApp:
@@ -220,6 +223,13 @@ class ImageProcessingApp:
         
 
     def _process_on_frames(self, output_video_path):
+        # 元の動画を読み込み
+        clip = VideoFileClip(self.file_path)
+        audio = clip.audio  # 音声を保存
+        # 音声を一時ファイルに保存
+        temp_audio_path = os.path.join(IMAGE_DIR, "temp_audio.mp3")
+        audio.write_audiofile(temp_audio_path)
+
         # 動画のプロパティを取得
         width = int(self.video_capture.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(self.video_capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -228,7 +238,8 @@ class ImageProcessingApp:
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # 出力フォーマットを指定
 
         # 動画の書き込み準備
-        out = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height), isColor=True)
+        temp_output_path = os.path.join(IMAGE_DIR, "temp_output.mp4")
+        out = cv2.VideoWriter(temp_output_path, fourcc, fps, (width, height), isColor=True)
         
         self.progress_window.start_timer()
         
@@ -249,6 +260,12 @@ class ImageProcessingApp:
         # リソースを解放
         #self.video_capture.release()
         out.release()
+
+        # 音声と映像をマージ
+        ffmpeg_merge_video_audio(temp_output_path, temp_audio_path, output_video_path)
+        os.remove(temp_output_path) # 一時ファイルを削除
+        os.remove(temp_audio_path) # 一時ファイルを削除
+
         self.progress_window.show_complete()
 
     def save_image_as(self):
