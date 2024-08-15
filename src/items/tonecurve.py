@@ -7,13 +7,13 @@ import cv2
 CHANNELS = {"R": 0, "G": 1, "B": 2}
 
 class TonecurveWindow:
-    def __init__(self, image, root):
+    def __init__(self, root):
         self.root = root
         self.window = Toplevel()
         self.window.title("Tone Curve Adjustment")
 
         self.luts = [[] for _ in range(3)]
-        self.original_image = np.array(image, dtype=np.uint8)
+        self.original_image = None
 
         self.image_on_canvas = None
 
@@ -45,12 +45,19 @@ class TonecurveWindow:
         self.reset_button = tk.Button(self.window, text="Reset", command=self.reset_curves)
         self.reset_button.pack(side=tk.TOP)
 
-    def load_image(self):
-        file_path = filedialog.askopenfilename()
-        if file_path:
-            self.original_image = cv2.imread(file_path)
-            self.display_image(self.original_image)
-            self.draw_histogram()
+    def set_image(self, image_pil):
+        self.original_image = np.array(image_pil, dtype=np.uint8)
+    
+    def preprocess(self):
+        self.display_image(self.original_image)
+        self.draw_histogram()
+
+    def apply_process(self):
+        channels = list(cv2.split(self.original_image))
+        for idx in CHANNELS.values():
+            channels[idx] = cv2.LUT(channels[idx], self.luts[idx])
+        adjusted_image = cv2.merge(channels)
+        return Image.fromarray(adjusted_image)
 
     def display_image(self, image):
         self.image_on_canvas = Image.fromarray(image)
@@ -83,9 +90,9 @@ class TonecurveWindow:
             image = self.original_image
 
         # ヒストグラムを計算
-        hist_r = cv2.calcHist([image], [2], None, [256], [0, 256])
-        hist_g = cv2.calcHist([image], [1], None, [256], [0, 256])
-        hist_b = cv2.calcHist([image], [0], None, [256], [0, 256])
+        hist_r = cv2.calcHist([image], [CHANNELS["R"]], None, [256], [0, 256])
+        hist_g = cv2.calcHist([image], [CHANNELS["G"]], None, [256], [0, 256])
+        hist_b = cv2.calcHist([image], [CHANNELS["B"]], None, [256], [0, 256])
 
         max_value = max(hist_r.max(), hist_g.max(), hist_b.max())
         for i in range(256):
