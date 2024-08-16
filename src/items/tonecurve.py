@@ -1,10 +1,13 @@
 import tkinter as tk
 from tkinter import Toplevel, filedialog
+import os
 import numpy as np
 from PIL import Image
 import cv2
+import openpyxl
 
 CHANNELS = {"R": 0, "G": 1, "B": 2}
+PARAM_DIR = os.path.join(os.path.dirname(__file__), "tonecurve_params")
 
 class TonecurveWindow:
     def __init__(self, root):
@@ -44,6 +47,15 @@ class TonecurveWindow:
 
         self.reset_button = tk.Button(self.window, text="Reset", command=self.reset_curves)
         self.reset_button.pack(side=tk.TOP)
+
+        self.save_button = tk.Button(self.window, text="Save", command=self.save_curves)
+        self.save_button.pack(side=tk.TOP)
+
+        self.load_button = tk.Button(self.window, text="Load", command=self.load_curves)
+        self.load_button.pack(side=tk.TOP)
+
+        if not os.path.exists(PARAM_DIR):
+            os.makedirs(PARAM_DIR)
 
     def set_image(self, image_pil):
         self.original_image = np.array(image_pil, dtype=np.uint8)
@@ -103,6 +115,39 @@ class TonecurveWindow:
             self.hist_canvas.create_line(i*3, 150, i*3, 150-r_value, fill="red", tags="histogram")
             self.hist_canvas.create_line(i*3+1, 150, i*3+1, 150-g_value, fill="green", tags="histogram")
             self.hist_canvas.create_line(i*3+2, 150, i*3+2, 150-b_value, fill="blue", tags="histogram")
+
+    def save_curves(self):
+        file_path = filedialog.asksaveasfilename(
+                                                initialdir=PARAM_DIR,
+                                                initialfile="curve_points",
+                                                defaultextension=".xlsx",  # デフォルトの拡張子
+                                                filetypes=[("Parameter Files", "*.xlsx")],
+        )
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(["channel", "x", "y"])
+        for channel, adjuster in self.tone_curve_adjusters.items():
+            for points in adjuster.curve_points:
+                ws.append([channel, *points])
+        wb.save(file_path)
+
+    def load_curves(self):
+        file_path = filedialog.askopenfilename(filetypes=[("Parameter Files", "*.xlsx")],
+                                               initialdir=PARAM_DIR)
+        wb = openpyxl.load_workbook(file_path)
+        ws = wb.worksheets[0]
+
+        # set curve points in each adjusters
+        for adjuster in self.tone_curve_adjusters.values():
+            adjuster.curve_points = []
+        for param in ws.iter_rows(min_row=2, values_only=True):
+            channel, x, y = param
+            self.tone_curve_adjusters[channel].curve_points.append([x, y])
+            
+        # make tonecurves
+        for adjuster in self.tone_curve_adjusters.values():
+            adjuster.draw_curve()
+            adjuster.update_image()
 
 class ToneCurveAdjuster:
     def __init__(self, parent, canvas, channel_name, color):

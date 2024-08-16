@@ -3,3 +3,5 @@ pillow
 pandas
 scipy
 matplotlib
+openpyxl
+moviepy
