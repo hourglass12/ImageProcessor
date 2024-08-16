@@ -1,6 +1,7 @@
 from threading import Thread
 import tkinter as tk
-from tkinter import ttk, filedialog, Canvas, Frame, Button, Scale, HORIZONTAL, OptionMenu, StringVar
+from tkinter import ttk, filedialog, HORIZONTAL, OptionMenu, StringVar, Canvas
+from tkinter.ttk import Frame, Button, Scale
 from PIL import Image, ImageTk
 import cv2
 import os
@@ -9,6 +10,7 @@ import numpy as np
 from moviepy.editor import VideoFileClip
 from moviepy.video.io.VideoFileClip import VideoFileClip
 from moviepy.video.io.ffmpeg_tools import ffmpeg_merge_video_audio
+from ttkthemes import ThemedTk
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 IMAGE_DIR = os.path.join(ROOT, "images")
@@ -31,7 +33,7 @@ class ImageProcessingApp:
 
     def create_widget(self):
         # 左側の編集フレームを作成
-        self.edit_frame = Frame(self.root, width=200, height=600, bg='lightgray')
+        self.edit_frame = Frame(self.root, width=200, height=600)
         self.edit_frame.pack(side=tk.LEFT, fill=tk.Y)
 
         # 右側の表示フレームを作成
@@ -116,8 +118,8 @@ class ImageProcessingApp:
         x_offset = (canvas_width - new_width) // 2
         y_offset = (canvas_height - new_height) // 2
 
-        resized_image = image.resize((new_width, new_height), Image.LANCZOS)
-        self.tk_image = ImageTk.PhotoImage(resized_image)
+        self.image = image.resize((new_width, new_height), Image.LANCZOS)
+        self.tk_image = ImageTk.PhotoImage(self.image)
 
         # キャンバスをクリアし、背景を黒に設定
         self.canvas.delete("all")
@@ -332,6 +334,7 @@ class ProgressWindow:
         self.complete_label.config(text=f"Process complete")
 
 if __name__ == "__main__":
-    root = tk.Tk()
+    root = ThemedTk(theme="adapta")
+    #root = tk.Tk()
     app = ImageProcessingApp(root)
     root.mainloop()

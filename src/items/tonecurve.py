@@ -1,5 +1,6 @@
 import tkinter as tk
-from tkinter import Toplevel, filedialog
+from tkinter import Toplevel, filedialog, Canvas
+from tkinter.ttk import Button
 import os
 import numpy as np
 from PIL import Image
@@ -20,16 +21,16 @@ class TonecurveWindow:
 
         self.image_on_canvas = None
 
-        self.hist_canvas = tk.Canvas(self.window, width=768, height=150, bg="black")
+        self.hist_canvas = Canvas(self.window, width=768, height=150, bg="black")
         self.hist_canvas.pack(side=tk.TOP)
 
-        self.r_canvas = tk.Canvas(self.window, width=256, height=256, bg="white",
+        self.r_canvas = Canvas(self.window, width=256, height=256, bg="white",
                                   #takefocus = True,
                                   )
-        self.g_canvas = tk.Canvas(self.window, width=256, height=256, bg="white",
+        self.g_canvas = Canvas(self.window, width=256, height=256, bg="white",
                                   #takefocus = True,
                                   )
-        self.b_canvas = tk.Canvas(self.window, width=256, height=256, bg="white",
+        self.b_canvas = Canvas(self.window, width=256, height=256, bg="white",
                                   #takefocus = True,
                                   )
 
@@ -45,13 +46,13 @@ class TonecurveWindow:
         for channel_name in self.tone_curve_adjusters:
             self.luts[CHANNELS[channel_name]] = self.tone_curve_adjusters[channel_name].lut.copy()
 
-        self.reset_button = tk.Button(self.window, text="Reset", command=self.reset_curves)
+        self.reset_button = Button(self.window, text="Reset", command=self.reset_curves)
         self.reset_button.pack(side=tk.TOP)
 
-        self.save_button = tk.Button(self.window, text="Save", command=self.save_curves)
+        self.save_button = Button(self.window, text="Save", command=self.save_curves)
         self.save_button.pack(side=tk.TOP)
 
-        self.load_button = tk.Button(self.window, text="Load", command=self.load_curves)
+        self.load_button = Button(self.window, text="Load", command=self.load_curves)
         self.load_button.pack(side=tk.TOP)
 
         if not os.path.exists(PARAM_DIR):

@@ -1,7 +1,7 @@
 import tkinter as tk
-from tkinter import Toplevel, Scale, Radiobutton, IntVar, HORIZONTAL
+from tkinter import Toplevel, IntVar, HORIZONTAL
+from tkinter.ttk import Scale, Radiobutton, Label
 from PIL import ImageFilter, ImageEnhance
-import numpy as np
 
 class SharpeningWindow:
     def __init__(self, main_app):
@@ -22,22 +22,34 @@ class SharpeningWindow:
         self.radio_on.pack(anchor=tk.W)
 
         # 先鋭化の強度（k値）を調整するスライダー
-        self.scale = Scale(self.window, from_=0, to=5, resolution=0.1, orient=HORIZONTAL, label="Sharpening Strength (k)", command=self.adjust_sharpen)
+        self.k_value = tk.DoubleVar()
+        self.scale = Scale(self.window, from_=0, to=5, orient=HORIZONTAL, variable=self.k_value, command=self.func_k_scale)
         self.scale.pack(fill=tk.X)
+
+        self.k_value_label = Label(self.window, text=self.scale.get())
+        self.k_value_label.pack(fill=tk.X)
 
         # UIの初期化
         #self.toggle_sharpen()
 
-    def toggle_sharpen(self):
-        if self.sharpen_var.get() == 1:
-            self.adjust_sharpen(self.scale.get())
-        else:
-            self.main_app.update_image(self.image)
+    def func_k_scale(self, k):
+        self.adjust_sharpen(k)
+        self.show_k_value()
+
+    def show_k_value(self):
+        self.k_value_label["text"] = self.scale.get()
 
     def adjust_sharpen(self, k):
         if self.sharpen_var.get() == 1:
             k = float(k)
             self.image = self.apply_sharpen(k)
+            self.main_app.update_image(self.image)
+
+    def toggle_sharpen(self):
+        if self.sharpen_var.get() == 1:
+            self.adjust_sharpen(self.scale.get())
+        else:
+            self.image = self.original_image.copy()
             self.main_app.update_image(self.image)
 
     def apply_sharpen(self, k):
