@@ -165,6 +165,7 @@ class ToneCurveAdjuster:
         self.canvas.bind("<ButtonRelease-3>", self.update_image)
         self.canvas.bind("<ButtonRelease-1>", self.update_image)
         self.canvas.bind("<Button-2>", self.delete_selected_point)
+        self.canvas.bind("<Double-Button-1>", self.delete_selected_point)
         self.draw_curve()
         self.lut = self.generate_lut()
 

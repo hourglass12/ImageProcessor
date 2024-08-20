@@ -272,9 +272,17 @@ class ImageProcessingApp:
 
     def save_image_as(self):
         output_image_path = filedialog.asksaveasfilename(initialdir=IMAGE_DIR,
-                                                            initialfile=f"{os.path.splitext(os.path.basename(self.file_path))[0]}_processed{os.path.splitext(os.path.basename(self.file_path))[1]}",
+                                                        initialfile=f"{os.path.splitext(os.path.basename(self.file_path))[0]}_processed",
+                                                        defaultextension=".png",  # デフォルトの拡張子
+                                                        filetypes=[
+                                                            ("PNG files", "*.png"),
+                                                            ("JPG files", "*.jpg"),
+                                                            ("TIF files", "*.tif"),
+                                                            ("All files", "*.*"),
+                                                        ],
             )
         processed_image = np.array(self.processor.apply_process())
+        processed_image = cv2.cvtColor(processed_image, cv2.COLOR_RGB2BGR)
         cv2.imwrite(output_image_path, processed_image)
 
 class ProgressWindow:
